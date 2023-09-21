@@ -1,5 +1,6 @@
 import { PartialType } from "@nestjs/mapped-types";
-import { Product } from "../entities/product.entity";
+import { ProductEntity } from "../../../persistence/entities/product.entity";
+import Product from "src/domain/product/product";
 
 
 export class ProductDto extends PartialType(Product) {

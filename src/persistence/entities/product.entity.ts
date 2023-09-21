@@ -1,9 +1,9 @@
 
 import { BeforeInsert, BeforeUpdate, Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
-import { ProductImage } from "./product-image.entity";
+import { ProductImageEntity } from "./product-image.entity";
 
-@Entity()
-export class Product {
+@Entity({ name: 'products' } )
+export class ProductEntity {
     @PrimaryGeneratedColumn('uuid')
     id: string;
     @Column('text', { unique: true })
@@ -14,11 +14,11 @@ export class Product {
     price: number;
 
     @OneToMany(
-        () => ProductImage,
+        () => ProductImageEntity,
         (image) => image.product,
         { cascade: true, eager: true  }
     )
-    images: ProductImage[];
+    images: ProductImageEntity[];
 
     @Column('text', { unique: true })
     slug: string;
