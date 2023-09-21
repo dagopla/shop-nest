@@ -1,6 +1,6 @@
-import { ConfigurableModuleBuilder } from "@nestjs/common";
-import { type } from "os";
-import { BeforeInsert, BeforeUpdate, Column, Entity, PrimaryGeneratedColumn } from "typeorm";
+
+import { BeforeInsert, BeforeUpdate, Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
+import { ProductImage } from "./product-image.entity";
 
 @Entity()
 export class Product {
@@ -12,8 +12,14 @@ export class Product {
     description: string;
     @Column('float8')
     price: number;
-    @Column('text',{nullable:true})
-    image: string;
+
+    @OneToMany(
+        () => ProductImage,
+        (image) => image.product,
+        { cascade: true, eager: true  }
+    )
+    images: ProductImage[];
+
     @Column('text', { unique: true })
     slug: string;
     @Column('int', { default: 0 })
@@ -36,12 +42,10 @@ export class Product {
     }
     @BeforeUpdate()
     checkSlugUpdate() {
-        if (!this.slug) {
-            this.slug = this.name
-        }
-        this.slug = this.slug.toLowerCase().replaceAll(' ', '-')
-            .replaceAll("'", '');
-
+        this.slug = this.slug
+        .toLowerCase()
+        .replaceAll(' ','_')
+        .replaceAll("'",'')
     }
 
 }

@@ -3,8 +3,11 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Product } from './entities/product.entity';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { PaginationDto } from '../common/dtos/paginationDto';
+import { ProductImage } from './entities/product-image.entity';
+import { ProductDto } from './dto/response-product';
+import { url } from 'inspector';
 
 @Injectable()
 export class ProductsService {
@@ -12,14 +15,23 @@ export class ProductsService {
 
   constructor(
     @InjectRepository(Product)
-    private readonly productRepository: Repository<Product> 
+    private readonly productRepository: Repository<Product>, 
+    @InjectRepository(ProductImage)
+    private readonly productImageRepository: Repository<ProductImage>,
+    private readonly dataSource:DataSource
   ){}
 
   create(createProductDto: CreateProductDto) {
 
     
     try {
-      const newProduct = this.productRepository.create(createProductDto);
+      const {images=[],...productDetails}=createProductDto;
+      const newProduct = this.productRepository.create(
+        {
+          ...productDetails,
+          images:images.map((image)=>this.productImageRepository.create({url:image}))
+        }
+      );
       return this.productRepository.save(newProduct);
       
     } catch (e) {
@@ -31,12 +43,16 @@ export class ProductsService {
   async findAll(paginationDto:PaginationDto) {
     const {limit=10,offset=0}=paginationDto;
     try {
-      return await this.productRepository.find({
+      const products =await this.productRepository.find({
         take:limit,
-        skip:offset
+        skip:offset,
+        relations:{
+          images:true
+        }
 
       })
       ;
+      return products.map((product)=> new ProductDto(product));
       
     } catch (error) {
       this.handleDBExceptions(error);
@@ -57,20 +73,40 @@ export class ProductsService {
   }
 
   async update(id: string, updateProductDto: UpdateProductDto) {
+    const {images,...productDetails}=updateProductDto;
+    const product= await this.productRepository.preload({
+      id,
+      ...productDetails
+    });
+    if(!product)
+      throw new NotFoundException('Product not found');
+    //create query runner
+    const queryRunner = this.dataSource.createQueryRunner();
+    //start transaction
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
     try {
-      const productUpdate =await this.productRepository.update(id,updateProductDto);
-      if(productUpdate.affected===0) throw new NotFoundException('Product not found');
-      const productUpdated=await this.productRepository.findOneBy({id});
-      return productUpdated;
+      if(images){
+        await queryRunner.manager.delete(ProductImage,{product:{id}});
+        product.images=images.map((image)=>this.productImageRepository.create({url:image}));
+      }
+      const productUpdate =await queryRunner.manager.save(product);
+      await queryRunner.commitTransaction();
+      await queryRunner.release();
+      return productUpdate;
     } catch (error) {
+      await queryRunner.rollbackTransaction();
       this.handleDBExceptions(error);
     }
+
   }
 
   async remove(id: string) {
     try {
       const productDelete=await this.productRepository.delete(id);
-      if(productDelete.affected===0) throw new NotFoundException('Product not found');
+      console.log(productDelete);
+      if(productDelete.affected===0) throw new BadRequestException('Product not found');
+      
       return {deleted:true};
     } catch (error) {
       this.handleDBExceptions(error);
@@ -81,7 +117,12 @@ export class ProductsService {
     try {
       const newProducts = await this.productRepository.manager.transaction(async (manager) => {
         const newProducts = createProductDto.map((product) => {
-          return manager.create(Product, product);
+          const {images=[],...productDetails}=product;
+          return manager.create(Product, 
+            {
+              ...productDetails,
+              images:images.map((image)=>manager.create(ProductImage,{url:image}))
+            });
         });
         return manager.save(newProducts);
       });
@@ -94,6 +135,11 @@ export class ProductsService {
     if(e.code === '23505')
       throw new BadRequestException(e.detail);
     this.logger.error(e);
+    console.log(e);
+    if(e instanceof BadRequestException)
+      throw e;
+    else
+    
     throw new InternalServerErrorException(e.message);
   }
 
